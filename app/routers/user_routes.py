@@ -21,7 +21,7 @@ Key Highlights:
 from builtins import dict, int, len, str
 from datetime import timedelta
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Request, Query
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db, get_email_service, require_role
@@ -33,6 +33,7 @@ from app.services.jwt_service import create_access_token
 from app.utils.link_generation import create_user_links, generate_pagination_links
 from app.dependencies import get_settings
 from app.services.email_service import EmailService
+from app.models.user_model import UserRole
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 settings = get_settings()
@@ -191,6 +192,47 @@ async def list_users(
         links=pagination_links  # Ensure you have appropriate logic to create these links
     )
 
+@router.get("/search", response_model=UserListResponse, tags=["User Management Requires (Admin or Manager Roles)"])
+async def search_users(
+    request: Request,
+    skip: int = 0,
+    limit: int = 10,
+    nickname: str = Query(None, description="Search by nickname"),
+    email: str = Query(None, description="Search by email"),
+    role: str = Query(None, description="Search by role"),
+    sort_key: str = Query("id", description="Field to sort by"),
+    sort_order: str = Query("asc", description="Sort order (asc or desc)"),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))
+):
+    if role and role not in dict(UserRole.__members__):
+        raise HTTPException(status_code=400, detail="Invalid role provided")
+    
+    # Apply filters based on the provided query parameters
+    filters = {
+        "nickname": nickname,
+        "email": email,
+        "role": role,
+    }
+
+    # Filter and search logic implementation using UserService
+    total_users = await UserService.count_filtered_users(db, filters)
+    users = await UserService.list_filtered_users(db, skip, limit, filters, sort_key, sort_order)
+
+    user_responses = [
+        UserResponse.model_validate(user) for user in users
+    ]
+    
+    pagination_links = generate_pagination_links(request, skip, limit, total_users)
+    
+    # Construct the final response with pagination details
+    return UserListResponse(
+        items=user_responses,
+        total=total_users,
+        page=skip // limit + 1,
+        size=len(user_responses),
+        links=pagination_links
+    )
 
 @router.post("/register/", response_model=UserResponse, tags=["Login and Registration"])
 async def register(user_data: UserCreate, session: AsyncSession = Depends(get_db), email_service: EmailService = Depends(get_email_service)):

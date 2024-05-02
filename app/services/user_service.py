@@ -1,9 +1,9 @@
 from builtins import Exception, bool, classmethod, int, str
 from datetime import datetime, timezone
 import secrets
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from pydantic import ValidationError
-from sqlalchemy import func, null, update, select
+from sqlalchemy import func, null, update, select, and_, desc, asc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_email_service, get_settings
@@ -65,16 +65,18 @@ class UserService:
             new_user.nickname = new_nickname
             logger.info(f"User Role: {new_user.role}")
             user_count = await cls.count(session)
-            new_user.role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS            
-            if new_user.role == UserRole.ADMIN:
-                new_user.email_verified = True
-
-            else:
+            new_user.role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS
+            if new_user.role != UserRole.ADMIN:
                 new_user.verification_token = generate_verification_token()
-                await email_service.send_verification_email(new_user)
 
             session.add(new_user)
             await session.commit()
+
+            if new_user.role == UserRole.ADMIN:
+                new_user.email_verified = True
+            else:
+                await email_service.send_verification_email(new_user)
+
             return new_user
         except ValidationError as e:
             logger.error(f"Validation error during user creation: {e}")
@@ -115,6 +117,33 @@ class UserService:
     @classmethod
     async def list_users(cls, session: AsyncSession, skip: int = 0, limit: int = 10) -> List[User]:
         query = select(User).offset(skip).limit(limit)
+        result = await cls._execute_query(session, query)
+        return result.scalars().all() if result else []
+
+    @classmethod
+    async def list_filtered_users(cls, session: AsyncSession, skip: int = 0, limit: int = 10, filters: Dict[str, Any] = {}, sort_key: str = "id", sort_order: str = "asc") -> List[User]:
+        # Construct the base query
+        query = select(User)
+
+        # Apply filters dynamically
+        conditions = []
+        if filters.get("nickname"):
+            conditions.append(User.nickname == filters["nickname"])
+        if filters.get("email"):
+            conditions.append(User.email == filters["email"])
+        if filters.get("role"):
+            conditions.append(User.role == filters["role"])
+
+        # Apply all accumulated conditions to the query
+        if conditions:
+            query = query.where(and_(*conditions))
+
+        sort_expression = asc(getattr(User, sort_key)) if sort_order == "asc" else desc(getattr(User, sort_key))
+        query = query.order_by(sort_expression)
+
+        # Apply pagination
+        query = query.offset(skip).limit(limit)
+
         result = await cls._execute_query(session, query)
         return result.scalars().all() if result else []
 
@@ -188,7 +217,29 @@ class UserService:
         result = await session.execute(query)
         count = result.scalar()
         return count
-    
+
+    @classmethod
+    async def count_filtered_users(cls, session: AsyncSession, filters: Dict[str, Any] = {}) -> int:
+        # Construct the base count query
+        query = select(func.count()).select_from(User)
+
+        # Apply filters dynamically
+        conditions = []
+        if filters.get("nickname"):
+            conditions.append(User.nickname == filters["nickname"])
+        if filters.get("email"):
+            conditions.append(User.email == filters["email"])
+        if filters.get("role"):
+            conditions.append(User.role == filters["role"])
+        
+        # Apply all accumulated conditions to the query
+        if conditions:
+            query = query.where(and_(*conditions))
+
+        result = await session.execute(query)
+        count = result.scalar()
+        return count
+
     @classmethod
     async def unlock_user_account(cls, session: AsyncSession, user_id: UUID) -> bool:
         user = await cls.get_by_id(session, user_id)
