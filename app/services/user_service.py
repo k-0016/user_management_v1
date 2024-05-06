@@ -57,6 +57,14 @@ class UserService:
             if existing_user:
                 logger.error("User with given email already exists.")
                 return None
+            # Check if the password is either None, empty, consists only of whitespace, or is below minimum length
+            password = validated_data.get('password', None)
+            if password is None or password.strip() == "":
+                logger.error("Password is required for user creation.")
+                return "PASSWORD_REQUIRED"
+            if len(password.strip()) < 8:
+                logger.error("Password must be at least 8 characters long.")
+                return "PASSWORD_TOO_SHORT"
 
             validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
             new_user = User(**validated_data)
