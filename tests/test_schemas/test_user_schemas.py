@@ -108,3 +108,18 @@ def test_user_base_url_invalid(url, user_base_data):
     user_base_data["profile_picture_url"] = url
     with pytest.raises(ValidationError):
         UserBase(**user_base_data)
+
+def test_user_base_name_max_length_valid(user_base_data):
+    max_length_name = 'a' * 100
+    user_base_data['first_name'] = max_length_name
+    user_base_data['last_name'] = max_length_name
+    user = UserBase(**user_base_data)
+    assert user.first_name == max_length_name
+    assert user.last_name == max_length_name
+
+def test_user_base_name_max_length_invalid(user_base_data):
+    over_length_name = 'a' * 101
+    user_base_data['first_name'] = over_length_name
+    user_base_data['last_name'] = over_length_name
+    with pytest.raises(ValidationError):
+        UserBase(**user_base_data)
