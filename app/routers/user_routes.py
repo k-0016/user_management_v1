@@ -88,6 +88,8 @@ async def update_user(user_id: UUID, user_update: UserUpdate, request: Request, 
     """
     user_data = user_update.model_dump(exclude_unset=True)
     updated_user = await UserService.update(db, user_id, user_data)
+    if updated_user == 'EMAIL_EXISTS':
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists")
     if not updated_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
@@ -173,6 +175,10 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))
 ):
+    if skip < 0:
+        skip = 0
+    if limit < 1:
+        limit = 1
     total_users = await UserService.count(db)
     users = await UserService.list_users(db, skip, limit)
 
@@ -195,7 +201,9 @@ async def list_users(
 @router.post("/register/", response_model=UserResponse, tags=["Login and Registration"])
 async def register(user_data: UserCreate, session: AsyncSession = Depends(get_db), email_service: EmailService = Depends(get_email_service)):
     user = await UserService.register_user(session, user_data.model_dump(), email_service)
-    if user:
+    if user == "PASSWORD_REQUIRED":
+        raise HTTPException(status_code=400, detail="Password is required for user creation.")
+    elif user:
         return user
     raise HTTPException(status_code=400, detail="Email already exists")
 

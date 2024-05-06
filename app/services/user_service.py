@@ -57,6 +57,9 @@ class UserService:
             if existing_user:
                 logger.error("User with given email already exists.")
                 return None
+            if 'password' in validated_data and (validated_data['password'] is None or validated_data['password'] == ""):
+                logger.error("Password is required for user creation.")
+                return 'PASSWORD_REQUIRED'
             validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
             new_user = User(**validated_data)
             new_nickname = generate_nickname()
@@ -85,7 +88,11 @@ class UserService:
         try:
             # validated_data = UserUpdate(**update_data).dict(exclude_unset=True)
             validated_data = UserUpdate(**update_data).model_dump(exclude_unset=True)
-
+            # print("===========",validated_data)
+            existing_user = await cls.get_by_email(session, validated_data['email'])
+            if existing_user and existing_user.id != user_id:
+                logger.error("User with given email already exists.")
+                return 'EMAIL_EXISTS'
             if 'password' in validated_data:
                 validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
             query = update(User).where(User.id == user_id).values(**validated_data).execution_options(synchronize_session="fetch")
