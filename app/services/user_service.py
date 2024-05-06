@@ -140,6 +140,10 @@ class UserService:
 
     @classmethod
     async def list_users(cls, session: AsyncSession, skip: int = 0, limit: int = 10) -> List[User]:
+        if skip < 0:
+            skip = 0  # Ensure skip is not negative
+        if limit < 1:
+            limit = 1  # Ensure limit is at least 1
         query = select(User).offset(skip).limit(limit)
         result = await cls._execute_query(session, query)
         return result.scalars().all() if result else []
