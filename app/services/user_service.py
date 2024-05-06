@@ -51,45 +51,60 @@ class UserService:
 
     @classmethod
     async def create(cls, session: AsyncSession, user_data: Dict[str, str], email_service: EmailService) -> Optional[User]:
+        # First check for email existence to avoid unnecessary processing
+        existing_user = await cls.get_by_email(session, user_data.get('email'))
+        if existing_user:
+            logger.error("User with given email already exists.")
+            return None
+
+        # Check for password issues before creating the UserCreate model
+        if 'password' not in user_data or not user_data['password']:
+            logger.error("Password is required for user creation.")
+            return 'PASSWORD_REQUIRED'
+
+        if len(user_data['password'].strip()) < 8:  # Check if password length is too short
+            logger.error("Password too short.")
+            return 'PASSWORD_TOO_SHORT'
+
+        # If all validations pass, proceed with creating the UserCreate model
         try:
             validated_data = UserCreate(**user_data).model_dump()
-            existing_user = await cls.get_by_email(session, validated_data['email'])
-            if existing_user:
-                logger.error("User with given email already exists.")
-                return None
-            # Check if the password is either None, empty, consists only of whitespace, or is below minimum length
-            password = validated_data.get('password', None)
-            if password is None or password.strip() == "":
-                logger.error("Password is required for user creation.")
-                return "PASSWORD_REQUIRED"
-            if len(password.strip()) < 8:
-                logger.error("Password must be at least 8 characters long.")
-                return "PASSWORD_TOO_SHORT"
 
-            validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
-            new_user = User(**validated_data)
+            # Handling password hashing
+            validated_data['hashed_password'] = hash_password(user_data['password'])
+            validated_data.pop('password', None)  # Remove plain password after hashing
+
+            # Generate a unique nickname
             new_nickname = generate_nickname()
             while await cls.get_by_nickname(session, new_nickname):
                 new_nickname = generate_nickname()
-            new_user.nickname = new_nickname
-            user_count = await cls.count(session)
-            new_user.role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS
-            new_user.email_verified = (new_user.role == UserRole.ADMIN)
-            if new_user.role != UserRole.ADMIN:
-                new_user.verification_token = generate_verification_token()
+            validated_data['nickname'] = new_nickname
 
+            # Determine user role
+            user_count = await cls.count(session)
+            validated_data['role'] = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS
+            validated_data['email_verified'] = (validated_data['role'] == UserRole.ADMIN)
+            if validated_data['role'] != UserRole.ADMIN:
+                validated_data['verification_token'] = generate_verification_token()
+
+            # Create and add new user to the database
+            new_user = User(**validated_data)
             session.add(new_user)
             await session.commit()
 
+            # Handle email verification for non-admin users
             if new_user.role != UserRole.ADMIN:
                 try:
                     await email_service.send_verification_email(new_user)
                 except Exception as e:
                     logger.error(f"Failed to send verification email: {e}")
+
             return new_user
+
         except ValidationError as e:
             logger.error(f"Validation error during user creation: {e}")
             return None
+
 
     @classmethod
     async def update(cls, session: AsyncSession, user_id: UUID, update_data: Dict[str, str]) -> Optional[User]:
