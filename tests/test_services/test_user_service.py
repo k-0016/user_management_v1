@@ -28,7 +28,8 @@ async def test_create_user_with_invalid_data(db_session, email_service):
         "password": "short",  # Invalid password
     }
     user = await UserService.create(db_session, user_data, email_service)
-    assert user is None
+    assert user == 'PASSWORD_TOO_SHORT', "Expected 'PASSWORD_TOO_SHORT' for short password"
+
 
 # Test fetching a user by ID when the user exists
 async def test_get_by_id_user_exists(db_session, user):
@@ -111,7 +112,8 @@ async def test_register_user_with_invalid_data(db_session, email_service):
         "password": "short",  # Invalid password
     }
     user = await UserService.register_user(db_session, user_data, email_service)
-    assert user is None
+    assert user == 'PASSWORD_TOO_SHORT', "Expected 'PASSWORD_TOO_SHORT' for short password"
+
 
 # Test successful user login
 async def test_login_user_successful(db_session, verified_user):
@@ -161,3 +163,24 @@ async def test_unlock_user_account(db_session, locked_user):
     assert unlocked, "The account should be unlocked"
     refreshed_user = await UserService.get_by_id(db_session, locked_user.id)
     assert not refreshed_user.is_locked, "The user should no longer be locked"
+
+# Test registering a user with missing password
+async def test_register_user_with_missing_password(db_session, email_service):
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "user_missing_password@example.com",
+        "role": UserRole.ANONYMOUS.name  # Assuming UserRole.ANONYMOUS is valid
+    }
+    user = await UserService.create(db_session, user_data, email_service)
+    assert user == 'PASSWORD_REQUIRED', "Expected response for missing password"
+
+# Test error for password that is too short
+async def test_password_too_short_error(db_session, email_service):
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "valid_email@example.com",
+        "password": "123",  # Deliberately short password
+        "role": UserRole.ANONYMOUS.name
+    }
+    user = await UserService.create(db_session, user_data, email_service)
+    assert user == 'PASSWORD_TOO_SHORT', "Expected response for short password"
