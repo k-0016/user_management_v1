@@ -88,8 +88,10 @@ async def update_user(user_id: UUID, user_update: UserUpdate, request: Request, 
     """
     user_data = user_update.model_dump(exclude_unset=True)
     updated_user = await UserService.update(db, user_id, user_data)
-    if not updated_user:
+    if updated_user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    elif isinstance(updated_user, Exception):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(updated_user))
 
     return UserResponse.model_construct(
         id=updated_user.id,

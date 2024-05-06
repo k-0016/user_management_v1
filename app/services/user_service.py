@@ -1,6 +1,7 @@
 from builtins import Exception, bool, classmethod, int, str
 from datetime import datetime, timezone
 import secrets
+from sqlite3 import IntegrityError
 from typing import Optional, Dict, List
 from pydantic import ValidationError
 from sqlalchemy import func, null, update, select
@@ -105,28 +106,37 @@ class UserService:
             logger.error(f"Validation error during user creation: {e}")
             return None
 
-
     @classmethod
     async def update(cls, session: AsyncSession, user_id: UUID, update_data: Dict[str, str]) -> Optional[User]:
         try:
-            # validated_data = UserUpdate(**update_data).dict(exclude_unset=True)
             validated_data = UserUpdate(**update_data).model_dump(exclude_unset=True)
 
+            # Handling email check and potential conflict
+            if 'email' in validated_data:
+                existing_user = await cls.get_by_email(session, validated_data['email'])
+                if existing_user and existing_user.id != user_id:
+                    logger.error("User with given email already exists.")
+                    return 'EMAIL_EXISTS'  # Return a specific code or message as in the commented version
+
+            # Handling password update by hashing the new password
             if 'password' in validated_data:
                 validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
+
+            # Perform the update operation
             query = update(User).where(User.id == user_id).values(**validated_data).execution_options(synchronize_session="fetch")
             await cls._execute_query(session, query)
             updated_user = await cls.get_by_id(session, user_id)
+            
             if updated_user:
                 session.refresh(updated_user)  # Explicitly refresh the updated user object
                 logger.info(f"User {user_id} updated successfully.")
                 return updated_user
             else:
                 logger.error(f"User {user_id} not found after update attempt.")
-            return None
-        except Exception as e:  # Broad exception handling for debugging
+                return None
+        except Exception as e:
             logger.error(f"Error during user update: {e}")
-            return None
+            return None  # Returning None as in the commented version for consistency
 
     @classmethod
     async def delete(cls, session: AsyncSession, user_id: UUID) -> bool:
