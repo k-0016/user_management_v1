@@ -184,3 +184,44 @@ async def test_password_too_short_error(db_session, email_service):
     }
     user = await UserService.create(db_session, user_data, email_service)
     assert user == 'PASSWORD_TOO_SHORT', "Expected response for short password"
+
+async def test_list_users_boundary_conditions(db_session, users_with_same_role_50_users):
+    # Test minimum limit
+    users_min_limit = await UserService.list_users(db_session, skip=0, limit=1)
+    assert len(users_min_limit) == 1
+
+    # Test skip exactly at the boundary of dataset size
+    users_skip_at_boundary = await UserService.list_users(db_session, skip=50, limit=10)
+    assert len(users_skip_at_boundary) == 0
+
+    # Test negative skip should reset to 0
+    users_negative_skip = await UserService.list_users(db_session, skip=-10, limit=10)
+    assert len(users_negative_skip) == 10
+    assert users_negative_skip[0].id == users_with_same_role_50_users[0].id  # Assuming sorted by id as default
+
+    # Test limit less than 1 (should reset to 1)
+    users_limit_less_than_one = await UserService.list_users(db_session, skip=10, limit=0)
+    assert len(users_limit_less_than_one) == 1
+
+async def test_pagination_integrity(db_session, users_with_same_role_50_users):
+    # Fetching first page
+    first_page = await UserService.list_users(db_session, skip=0, limit=10)
+    second_page = await UserService.list_users(db_session, skip=10, limit=10)
+    
+    # Ensure no overlap between first and second page
+    first_page_ids = {user.id for user in first_page}
+    second_page_ids = {user.id for user in second_page}
+    assert first_page_ids.isdisjoint(second_page_ids)
+
+    # Ensure the total number of unique users across both pages is correct
+    assert len(first_page_ids.union(second_page_ids)) == 20
+    
+async def test_invalid_skip_and_limit_values(db_session, users_with_same_role_50_users):
+    with pytest.raises(TypeError):
+        await UserService.list_users(db_session, skip="ten", limit=10)
+    with pytest.raises(TypeError):
+        await UserService.list_users(db_session, skip=0, limit="twenty")
+    
+    # Assuming extreme values for testing if type validation is not needed
+    extreme_limit = await UserService.list_users(db_session, skip=0, limit=1000)
+    assert len(extreme_limit) == 50  # Assuming there are only 50 users
