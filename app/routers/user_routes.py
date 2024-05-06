@@ -21,7 +21,7 @@ Key Highlights:
 from builtins import dict, int, len, str
 from datetime import timedelta
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db, get_email_service, require_role
@@ -168,28 +168,31 @@ async def create_user(user: UserCreate, request: Request, db: AsyncSession = Dep
 @router.get("/users/", response_model=UserListResponse, tags=["User Management Requires (Admin or Manager Roles)"])
 async def list_users(
     request: Request,
-    skip: int = 0,
-    limit: int = 10,
+    skip: int = Query(default=0, ge=0),  # Ensures 'skip' is greater than or equal to 0
+    limit: int = Query(default=10, ge=1, le=100),  # Ensures 'limit' is between 1 and 100
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))
 ):
-    total_users = await UserService.count(db)
-    users = await UserService.list_users(db, skip, limit)
+    try:
+        total_users = await UserService.count(db)
+        users = await UserService.list_users(db, skip, limit)
 
-    user_responses = [
-        UserResponse.model_validate(user) for user in users
-    ]
-    
-    pagination_links = generate_pagination_links(request, skip, limit, total_users)
-    
-    # Construct the final response with pagination details
-    return UserListResponse(
-        items=user_responses,
-        total=total_users,
-        page=skip // limit + 1,
-        size=len(user_responses),
-        links=pagination_links  # Ensure you have appropriate logic to create these links
-    )
+        user_responses = [
+            UserResponse.model_validate(user) for user in users
+        ]
+        
+        pagination_links = generate_pagination_links(request, skip, limit, total_users)
+        
+        # Construct the final response with pagination details
+        return UserListResponse(
+            items=user_responses,
+            total=total_users,
+            page=(skip // limit) + 1,
+            size=len(user_responses),
+            links=pagination_links  # Ensure you have appropriate logic to create these links
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/register/", response_model=UserResponse, tags=["Login and Registration"])

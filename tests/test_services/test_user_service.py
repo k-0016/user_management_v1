@@ -39,8 +39,9 @@ async def test_get_by_id_user_exists(db_session, user):
 # Test fetching a user by ID when the user does not exist
 async def test_get_by_id_user_does_not_exist(db_session):
     non_existent_user_id = "non-existent-id"
-    retrieved_user = await UserService.get_by_id(db_session, non_existent_user_id)
-    assert retrieved_user is None
+    with pytest.raises(RuntimeError) as excinfo:
+        retrieved_user = await UserService.get_by_id(db_session, non_existent_user_id)
+    assert "An error occurred" in str(excinfo.value), "Expected RuntimeError when getting non-existent user"
 
 # Test fetching a user by nickname when the user exists
 async def test_get_by_nickname_user_exists(db_session, user):
@@ -82,8 +83,10 @@ async def test_delete_user_exists(db_session, user):
 # Test attempting to delete a user who does not exist
 async def test_delete_user_does_not_exist(db_session):
     non_existent_user_id = "non-existent-id"
-    deletion_success = await UserService.delete(db_session, non_existent_user_id)
-    assert deletion_success is False
+    with pytest.raises(RuntimeError) as excinfo:
+        deletion_success = await UserService.delete(db_session, non_existent_user_id)
+    assert "An error occurred" in str(excinfo.value), "Expected RuntimeError when deleting non-existent user"
+
 
 # Test listing users with pagination
 async def test_list_users_with_pagination(db_session, users_with_same_role_50_users):
@@ -184,3 +187,45 @@ async def test_password_too_short_error(db_session, email_service):
     }
     user = await UserService.create(db_session, user_data, email_service)
     assert user == 'PASSWORD_TOO_SHORT', "Expected response for short password"
+
+async def test_list_users_boundary_conditions(db_session, users_with_same_role_50_users):
+    # Test minimum limit
+    users_min_limit = await UserService.list_users(db_session, skip=0, limit=1)
+    assert len(users_min_limit) == 1, "Limit of 1 should return exactly 1 user"
+
+    # Test skip exactly at the boundary of dataset size
+    users_skip_at_boundary = await UserService.list_users(db_session, skip=50, limit=10)
+    assert len(users_skip_at_boundary) == 0, "Skipping past all users should return empty list"
+
+    # Test negative skip should reset to 0
+    users_negative_skip = await UserService.list_users(db_session, skip=-10, limit=10)
+    assert len(users_negative_skip) == 10, "Negative skip should be treated as 0"
+    assert users_negative_skip[0].id == users_with_same_role_50_users[0].id, "Check first user is the same as the first added"
+
+    # Test limit less than 1 (should reset to 1)
+    users_limit_less_than_one = await UserService.list_users(db_session, skip=10, limit=0)
+    assert len(users_limit_less_than_one) == 1, "Limit less than one should be treated as 1"
+
+
+async def test_pagination_integrity(db_session, users_with_same_role_50_users):
+    # Fetching first page
+    first_page = await UserService.list_users(db_session, skip=0, limit=10)
+    second_page = await UserService.list_users(db_session, skip=10, limit=10)
+
+    # Ensure no overlap between first and second page
+    first_page_ids = {user.id for user in first_page}
+    second_page_ids = {user.id for user in second_page}
+    assert first_page_ids.isdisjoint(second_page_ids)
+
+    # Ensure the total number of unique users across both pages is correct
+    assert len(first_page_ids.union(second_page_ids)) == 20
+
+async def test_invalid_skip_and_limit_values(db_session, users_with_same_role_50_users):
+    with pytest.raises(TypeError):
+        await UserService.list_users(db_session, skip="ten", limit=10)
+    with pytest.raises(TypeError):
+        await UserService.list_users(db_session, skip=0, limit="twenty")
+
+    # Assuming extreme values for testing if type validation is not needed
+    extreme_limit = await UserService.list_users(db_session, skip=0, limit=1000)
+    assert len(extreme_limit) == 50, "Assuming there are only 50 users, limit of 1000 should return all 50"

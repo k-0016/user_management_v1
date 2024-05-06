@@ -1,6 +1,7 @@
 from builtins import Exception, bool, classmethod, int, str
 from datetime import datetime, timezone
 import secrets
+from sqlite3 import DataError
 from typing import Optional, Dict, List
 from pydantic import ValidationError
 from sqlalchemy import func, null, update, select
@@ -140,10 +141,32 @@ class UserService:
 
     @classmethod
     async def list_users(cls, session: AsyncSession, skip: int = 0, limit: int = 10) -> List[User]:
-        query = select(User).offset(skip).limit(limit)
-        result = await cls._execute_query(session, query)
-        return result.scalars().all() if result else []
+        # Validate input types
+        if not isinstance(skip, int) or not isinstance(limit, int):
+            raise TypeError("Skip and limit values must be integers")
 
+        # Correct negative skip to 0
+        skip = max(0, skip)
+
+        # Ensure limit is at least 1
+        limit = max(1, limit)
+
+        try:
+            query = select(User).offset(skip).limit(limit)
+            result = await cls._execute_query(session, query)
+            return result.scalars().all() if result else []
+        except DataError as e:
+            # Log this error or handle it as per your error handling policy
+            raise ValueError("Invalid query parameters") from e
+
+    @staticmethod
+    async def _execute_query(session, query):
+        try:
+            result = await session.execute(query)
+            return result
+        except Exception as e:
+            # Here you should handle unexpected errors, maybe log them or adjust your error handling
+            raise RuntimeError("An error occurred while executing the query.") from e
     @classmethod
     async def register_user(cls, session: AsyncSession, user_data: Dict[str, str], get_email_service) -> Optional[User]:
         return await cls.create(session, user_data, get_email_service)
