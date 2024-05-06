@@ -138,33 +138,6 @@ class UserService:
             logger.error(f"Error during user update: {e}")
             return None  # Returning None as in the commented version for consistency
 
-    # @classmethod
-    # async def update(cls, session: AsyncSession, user_id: UUID, update_data: Dict[str, str]) -> Optional[User]:
-    #     try:
-    #         # validated_data = UserUpdate(**update_data).dict(exclude_unset=True)
-    #         validated_data = UserUpdate(**update_data).model_dump(exclude_unset=True)
-    #         # print("===========",validated_data)
-    #         existing_user = await cls.get_by_email(session, validated_data['email'])
-    #         if existing_user and existing_user.id != user_id:
-    #             logger.error("User with given email already exists.")
-    #             return 'EMAIL_EXISTS'
-
-    #         if 'password' in validated_data:
-    #             validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
-    #         query = update(User).where(User.id == user_id).values(**validated_data).execution_options(synchronize_session="fetch")
-    #         await cls._execute_query(session, query)
-    #         updated_user = await cls.get_by_id(session, user_id)
-    #         if updated_user:
-    #             session.refresh(updated_user)  # Explicitly refresh the updated user object
-    #             logger.info(f"User {user_id} updated successfully.")
-    #             return updated_user
-    #         else:
-    #             logger.error(f"User {user_id} not found after update attempt.")
-    #         return None
-    #     except Exception as e:  # Broad exception handling for debugging
-    #         logger.error(f"Error during user update: {e}")
-    #         return None
-
     @classmethod
     async def delete(cls, session: AsyncSession, user_id: UUID) -> bool:
         user = await cls.get_by_id(session, user_id)

@@ -88,10 +88,6 @@ async def update_user(user_id: UUID, user_update: UserUpdate, request: Request, 
     """
     user_data = user_update.model_dump(exclude_unset=True)
     updated_user = await UserService.update(db, user_id, user_data)
-    # if updated_user == 'EMAIL_EXISTS':
-    #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists")
-    # if not updated_user:
-    #     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if updated_user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     elif isinstance(updated_user, Exception):
