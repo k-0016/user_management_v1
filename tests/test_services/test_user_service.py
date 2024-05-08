@@ -255,3 +255,27 @@ async def test_invalid_skip_and_limit_values(db_session, users_with_same_role_50
     # Assuming extreme values for testing if type validation is not needed
     extreme_limit = await UserService.list_users(db_session, skip=0, limit=1000)
     assert len(extreme_limit) == 50  # Assuming there are only 50 users
+
+async def test_search_user_by_email(db_session, users_with_same_role_50_users):
+    user = await UserService.list_filtered_users(db_session, filters={"email": users_with_same_role_50_users[0].email})
+    assert user[0].email == users_with_same_role_50_users[0].email
+
+async def test_search_user_by_not_exist_email(db_session, users_with_same_role_50_users):
+    user = await UserService.list_filtered_users(db_session, filters={"email": "test@test.com"})
+    assert user == []
+
+async def test_search_user_by_nickname(db_session, users_with_same_role_50_users):
+    user = await UserService.list_filtered_users(db_session, filters={"nickname": users_with_same_role_50_users[0].nickname})
+    assert user[0].nickname == users_with_same_role_50_users[0].nickname
+
+async def test_search_user_by_not_exist_nickname(db_session, users_with_same_role_50_users):
+    user = await UserService.list_filtered_users(db_session, filters={"nickname": "test"})
+    assert user == []
+
+async def test_search_user_by_role(db_session, users_with_same_role_50_users):
+    user = await UserService.list_filtered_users(db_session, filters={"role": users_with_same_role_50_users[0].role})
+    assert user[0].role == users_with_same_role_50_users[0].role
+
+async def test_search_user_by_not_exist_role(db_session, users_with_same_role_50_users):
+    user = await UserService.list_filtered_users(db_session, filters={"role": "test"})
+    assert user == []
