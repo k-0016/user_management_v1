@@ -2,9 +2,9 @@ from builtins import Exception, bool, classmethod, int, str
 from datetime import datetime, timezone
 import secrets
 from sqlite3 import IntegrityError
-from typing import Optional, Dict, List
+from typing import Any, Optional, Dict, List
 from pydantic import ValidationError
-from sqlalchemy import func, null, update, select
+from sqlalchemy import and_, asc, desc, func, null, update, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_email_service, get_settings
@@ -157,6 +157,34 @@ class UserService:
         query = select(User).offset(skip).limit(limit)
         result = await cls._execute_query(session, query)
         return result.scalars().all() if result else []
+    
+    @classmethod
+    async def list_filtered_users(cls, session: AsyncSession, skip: int = 0, limit: int = 10, filters: Dict[str, Any] = {}, sort_key: str = "id", sort_order: str = "asc") -> List[User]:
+        # Construct the base query
+        query = select(User)
+
+        # Apply filters dynamically
+        conditions = []
+        if filters.get("nickname"):
+            conditions.append(User.nickname == filters["nickname"])
+        if filters.get("email"):
+            conditions.append(User.email == filters["email"])
+        if filters.get("role"):
+            conditions.append(User.role == filters["role"])
+
+        # Apply all accumulated conditions to the query
+        if conditions:
+            query = query.where(and_(*conditions))
+
+        sort_expression = asc(getattr(User, sort_key)) if sort_order == "asc" else desc(getattr(User, sort_key))
+        query = query.order_by(sort_expression)
+
+        # Apply pagination
+        query = query.offset(skip).limit(limit)
+
+        result = await cls._execute_query(session, query)
+        return result.scalars().all() if result else []
+
 
     @classmethod
     async def register_user(cls, session: AsyncSession, user_data: Dict[str, str], get_email_service) -> Optional[User]:
@@ -225,6 +253,28 @@ class UserService:
         :return: The count of users.
         """
         query = select(func.count()).select_from(User)
+        result = await session.execute(query)
+        count = result.scalar()
+        return count
+    
+    @classmethod
+    async def count_filtered_users(cls, session: AsyncSession, filters: Dict[str, Any] = {}) -> int:
+        # Construct the base count query
+        query = select(func.count()).select_from(User)
+
+        # Apply filters dynamically
+        conditions = []
+        if filters.get("nickname"):
+            conditions.append(User.nickname == filters["nickname"])
+        if filters.get("email"):
+            conditions.append(User.email == filters["email"])
+        if filters.get("role"):
+            conditions.append(User.role == filters["role"])
+
+        # Apply all accumulated conditions to the query
+        if conditions:
+            query = query.where(and_(*conditions))
+
         result = await session.execute(query)
         count = result.scalar()
         return count
